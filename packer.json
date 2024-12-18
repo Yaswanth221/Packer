@@ -1,0 +1,100 @@
+{
+    "_comment": "Create an AWS AMI with AMZ Linux 2018 with Java and Tomcat",
+    "variables": {
+        "aws_access_key": "",
+        "aws_secret_key": "",
+        "region": "",
+        "source_ami": "",
+        "instance_type": "",
+        "vpc_id": "",
+        "subnet_id": ""
+    },
+    "_comment1": "packer build -var \"aws_secret_key=foo\" template.json",
+    "_comment2": "packer build -var-file packer-vars.json template.json",
+    "builders": [
+        {
+            "access_key": "{{user `aws_access_key`}}",
+            "secret_key": "{{user `aws_secret_key`}}",
+            "type": "amazon-ebs",
+            "region": "{{user `region`}}",
+            "source_ami": "{{user `source_ami`}}",
+            "instance_type": "{{user `instance_type`}}",
+            "ssh_username": "ubuntu",
+            "ami_name": "Ansible-image-{{isotime | clean_resource_name}}",
+            "vpc_id": "{{user `vpc_id`}}",
+            "subnet_id": "{{user `subnet_id`}}",
+            "tags": {
+                "Name": "Ansible-image-{{isotime | clean_resource_name}}"
+            }
+        }
+    ],
+    "provisioners": [
+        {
+            "type": "shell",
+            "inline": [
+                "sleep 30",
+                "sudo apt update -y",
+                "if ! id -u ansibleadmin >/dev/null 2>&1; then sudo useradd -m -s /bin/bash ansibleadmin; fi",
+                "sudo mkdir -p /home/ansibleadmin/.ssh",
+                "sudo touch /home/ansibleadmin/.ssh/authorized_keys",
+                "sudo chown -R ansibleadmin:ansibleadmin /home/ansibleadmin/.ssh",
+                "sudo chmod 700 /home/ansibleadmin/.ssh",
+                "sudo chmod 600 /home/ansibleadmin/.ssh/authorized_keys",
+                "sudo usermod -aG sudo ansibleadmin",
+                "echo 'ansibleadmin ALL=(ALL) NOPASSWD: ALL' | sudo tee -a /etc/sudoers",
+                "echo 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDK38rvrelsl8X+0mdFYdvb12i9IUELR6livkLvjxbxpFU7nY5Z5p0ZJ+2FaTXx5qHbT3SGwAOwkX3n82RQPwCeUkdLLQN6eyaBvI7XxIob90ofUrobVt38SJPBeZ2CUrrCZpjRbYEekzR8qhA0ZZ3TB03ujPYJvQZxUGgatoqq8vH+49tSvtx4FUCHaZB/fxVu2yevN6b0kVE8U9H8YucjW2muRbim4UKIpz6FLoxG8G18zBt6Nr1XEIqYWqg0KRpZLRyIdCVCXsNIhePSJzT6MPPHkE3qaTeQV9T54BKX+vX5XK8yxEHh7NYhwPa18VmivpZixUfLdl0V6oxUdYet' | sudo tee /home/ansibleadmin/.ssh/authorized_keys"
+            ]
+        },
+        {
+            "type": "shell",
+            "inline": [
+                "sudo apt update -y",
+                "curl https://get.docker.com | bash"
+            ]
+        },
+        {
+            "type": "file",
+            "source": "docker.service",
+            "destination": "/tmp/docker.service"
+        },
+        {
+            "type": "shell",
+            "inline": [
+                "sudo cp /tmp/docker.service /lib/systemd/system/docker.service",
+                "sudo usermod -a -G docker ubuntu",
+                "sudo usermod -a -G docker ansibleadmin",
+                "sudo systemctl daemon-reload",
+                "sudo service docker restart"
+            ]
+        },
+        {
+            "type": "shell",
+            "inline": [
+                "sudo useradd --no-create-home --shell /bin/false node_exporter",
+                "wget https://github.com/prometheus/node_exporter/releases/download/v1.8.2/node_exporter-1.8.2.linux-amd64.tar.gz",
+                "tar xvzf node_exporter-1.8.2.linux-amd64.tar.gz",
+                "sudo cp node_exporter-1.8.2.linux-amd64/node_exporter /usr/local/bin",
+                "sudo chown node_exporter:node_exporter /usr/local/bin/node_exporter"
+            ]
+        },
+        {
+            "type": "file",
+            "source": "node_exporter.service",
+            "destination": "/tmp/node_exporter.service"
+        },
+        {
+            "type": "shell",
+            "inline": [
+                "sudo cp /tmp/node_exporter.service /etc/systemd/system/node_exporter.service",
+                "sudo systemctl enable node_exporter",
+                "rm -rf node_exporter*"
+            ]
+        },
+        {
+            "type": "shell",
+            "inline": [
+                "sudo apt install -y unzip stress net-tools jq"
+            ]
+        }
+    ]
+}
